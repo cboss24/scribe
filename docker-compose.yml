@@ -1,0 +1,19 @@
+version: "2"
+
+services:
+  db:
+    image: postgres:latest
+    volumes:
+      - ./db:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    env_file: .env
+
+  app:
+    build:
+      context: .
+    depends_on:
+      - db
+    links:
+      - db
+    env_file: .env
