@@ -16,4 +16,9 @@ func main() {
 	if err != nil {
 		log.Fatalln(err)
 	}
+
+	n := 10
+	d := NewDispatcher(n)
+	d.Start()
+	Poller()
 }

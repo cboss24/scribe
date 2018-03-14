@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"time"
+	"fmt"
 )
 
 var EventQueue = make(chan BatchEvent, 100)
@@ -48,7 +50,10 @@ func Poller() {
 	}}`
 	event := BatchEvent{}
 	json.Unmarshal([]byte(str), event)
-	EventQueue <- event
-	EventQueue <- event
-	EventQueue <- event
+
+	for {
+		EventQueue <- event
+		fmt.Printf("Added event to queue. Queue is now size %d.\n", len(EventQueue))
+		time.Sleep(500 * time.Millisecond)
+	}
 }
