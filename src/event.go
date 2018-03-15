@@ -16,3 +16,8 @@ type BatchEvent struct {
 	Resources  []string        `json:"resources"`
 	Detail     batch.JobDetail `json:"detail"`
 }
+
+type BatchMessage struct {
+	ReceiptHandle string
+	Event         BatchEvent
+}

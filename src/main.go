@@ -20,5 +20,5 @@ func main() {
 	n := 10
 	d := NewDispatcher(n)
 	d.Start()
-	Poller()
+	Poll(os.Getenv("SQS_QUEUE_NAME"))
 }

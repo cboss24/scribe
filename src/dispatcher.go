@@ -3,13 +3,13 @@ package main
 import "fmt"
 
 type Dispatcher struct {
-	WorkerQueue chan chan BatchEvent
+	WorkerQueue chan chan BatchMessage
 	WorkerCount int
 }
 
 func NewDispatcher(workerCount int) Dispatcher {
 	return Dispatcher{
-		WorkerQueue: make(chan chan BatchEvent, workerCount),
+		WorkerQueue: make(chan chan BatchMessage, workerCount),
 		WorkerCount: workerCount,
 	}
 }

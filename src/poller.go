@@ -2,58 +2,57 @@ package main
 
 import (
 	"encoding/json"
-	"time"
 	"fmt"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/sqs"
+	"log"
 )
 
-var EventQueue = make(chan BatchEvent, 100)
+var EventQueue = make(chan BatchMessage, 100)
 
-// TODO Implement SQS Long Polling
-func Poller() {
-	str := `{
-	"version": "0",
-	"id": "c8f9c4b5-76e5-d76a-f980-7011e206042b",
-	"detail-type": "Batch Job State Change",
-	"source": "aws.batch",
-	"account": "aws_account_id",
-	"time": "2017-10-23T17:56:03Z",
-	"region": "us-east-1",
-	"resources": [
-		"arn:aws:batch:us-east-1:aws_account_id:job/4c7599ae-0a82-49aa-ba5a-4727fcce14a8"
-	],
-	"detail": {
-		"jobName": "event-test",
-		"jobId": "4c7599ae-0a82-49aa-ba5a-4727fcce14a8",
-		"jobQueue": "arn:aws:batch:us-east-1:aws_account_id:job-queue/HighPriority",
-		"status": "RUNNABLE",
-		"attempts": [],
-		"createdAt": 1508781340401,
-		"retryStrategy": {
-			"attempts": 1
+func Poll(queueName string) {
+	sess := session.Must(session.NewSessionWithOptions(session.Options{
+		Config: aws.Config{
+			Region: aws.String("us-east-1"),
+			CredentialsChainVerboseErrors: aws.Bool(true),
 		},
-		"dependsOn": [],
-		"jobDefinition": "arn:aws:batch:us-east-1:aws_account_id:job-definition/first-run-job-definition:1",
-		"parameters": {},
-		"container": {
-			"image": "busybox",
-			"vcpus": 2,
-			"memory": 2000,
-			"command": [
-				"echo",
-				"'hello world'"
-			],
-			"volumes": [],
-			"environment": [],
-			"mountPoints": [],
-			"ulimits": []
-		}
-	}}`
-	event := BatchEvent{}
-	json.Unmarshal([]byte(str), event)
+	}))
+	svc := sqs.New(sess)
 
+	queueUrlOutput, err := svc.GetQueueUrl(&sqs.GetQueueUrlInput{
+		QueueName: aws.String(queueName),
+	})
+	if err != nil {
+		log.Fatalln(err)
+	}
+	queueUrl := queueUrlOutput.QueueUrl
 	for {
-		EventQueue <- event
-		fmt.Printf("Added event to queue. Queue is now size %d.\n", len(EventQueue))
-		time.Sleep(500 * time.Millisecond)
+		receiveMessageOuput, err := svc.ReceiveMessage(&sqs.ReceiveMessageInput{
+			QueueUrl:            queueUrl,
+			MaxNumberOfMessages: aws.Int64(10),
+			WaitTimeSeconds:     aws.Int64(20),
+			VisibilityTimeout:   aws.Int64(60),
+		})
+		if err != nil {
+			log.Fatalln(err)
+		}
+
+		if len(receiveMessageOuput.Messages) == 0 {
+			fmt.Println("Received no messages")
+		} else {
+			for _, v := range receiveMessageOuput.Messages {
+				event := BatchEvent{}
+				err := json.Unmarshal([]byte(*v.Body), &event)
+				if err != nil {
+					log.Fatalln(err)
+				}
+				EventQueue <- BatchMessage{
+					ReceiptHandle: *v.ReceiptHandle,
+					Event:         event,
+				}
+				fmt.Printf("Added event to queue. Queue is now size %d.\n", len(EventQueue))
+			}
+		}
 	}
 }

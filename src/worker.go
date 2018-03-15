@@ -7,15 +7,15 @@ import (
 
 type Worker struct {
 	Id          int
-	Input       chan BatchEvent
+	Input       chan BatchMessage
 	Quit        chan bool
-	WorkerQueue chan chan BatchEvent
+	WorkerQueue chan chan BatchMessage
 }
 
-func NewWorker(id int, workerQueue chan chan BatchEvent) Worker {
+func NewWorker(id int, workerQueue chan chan BatchMessage) Worker {
 	return Worker{
 		Id:          id,
-		Input:       make(chan BatchEvent),
+		Input:       make(chan BatchMessage),
 		Quit:        make(chan bool),
 		WorkerQueue: workerQueue,
 	}
