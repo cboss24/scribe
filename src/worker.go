@@ -1,8 +1,11 @@
 package main
 
 import (
+	_ "database/sql"
 	"fmt"
-	"time"
+	"github.com/jmoiron/sqlx"
+	_ "github.com/lib/pq"
+	"log"
 )
 
 type Worker struct {
@@ -26,9 +29,10 @@ func (w *Worker) Start() {
 		for {
 			w.WorkerQueue <- w.Input
 			select {
-			case <-w.Input:
+			case m := <-w.Input:
 				fmt.Printf("Worker %d Received Input!\n", w.Id)
-				time.Sleep(10 * time.Second)
+				updateJobRecord(DbConn, m.Event)
+				deleteMessage()
 			case <-w.Quit:
 				fmt.Printf("Worker %d Quitting!\n", w.Id)
 				return
@@ -36,6 +40,40 @@ func (w *Worker) Start() {
 
 		}
 	}()
+}
+
+var Previous map[string][]string = map[string][]string{
+	"SUBMITTED": {},
+	"PENDING":   {"SUBMITTED"},
+	"RUNNABLE":  {"PENDING", "RUNNING"},
+	"STARTING":  {"RUNNABLE"},
+	"RUNNING":   {"STARTING"},
+	"SUCCEEDED": {"RUNNING"},
+	"FAILED":    {"RUNNING"},
+}
+
+func updateJobRecord(db *sqlx.DB, e BatchEvent) {
+	statement := `
+	INSERT INTO job (batch_id, status, last_changed)
+	VALUES (?, ?, ?)
+	ON CONFLICT (batch_id) DO
+		UPDATE SET status = ?, last_changed = ?
+		WHERE job.last_changed < ? OR (job.last_changed = ? AND job.status IN (?))
+	;`
+	sql, args, err := sqlx.In(statement, *e.Detail.JobId, *e.Detail.Status, e.Time, *e.Detail.Status, e.Time, e.Time, e.Time, Previous[*e.Detail.Status])
+	if err != nil {
+		log.Fatalln(err)
+	}
+	sql = db.Rebind(sql)
+
+	_, err = db.Exec(sql, args...)
+	if err != nil {
+		log.Fatalln(err)
+	}
+}
+
+func deleteMessage() {
+
 }
 
 func (w *Worker) Stop() {
