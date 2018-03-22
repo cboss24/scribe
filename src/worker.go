@@ -6,6 +6,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
 	"log"
+	"time"
 )
 
 type Worker struct {
@@ -42,7 +43,7 @@ func (w *Worker) Start() {
 	}()
 }
 
-var Previous map[string][]string = map[string][]string{
+var PreviousStates map[string][]string = map[string][]string{
 	"SUBMITTED": {},
 	"PENDING":   {"SUBMITTED"},
 	"RUNNABLE":  {"PENDING", "RUNNING"},
@@ -52,20 +53,38 @@ var Previous map[string][]string = map[string][]string{
 	"FAILED":    {"RUNNING"},
 }
 
+type JobRecord struct {
+	BatchId     string    `db:"batch_id"`
+	Status      string    `db:"status"`
+	LastChanged time.Time `db:"last_changed"`
+}
+
+type QueryArg struct {
+	JobRecord
+	Overwrite []string `db:"overwrite"`
+}
+
 func updateJobRecord(db *sqlx.DB, e BatchEvent) {
 	statement := `
 	INSERT INTO job (batch_id, status, last_changed)
-	VALUES (?, ?, ?)
+	VALUES (:batch_id, :status, :last_changed)
 	ON CONFLICT (batch_id) DO
-		UPDATE SET status = ?, last_changed = ?
-		WHERE job.last_changed < ? OR (job.last_changed = ? AND job.status IN (?))
+		UPDATE SET status = :status, last_changed = :last_changed
+		WHERE job.last_changed < :last_changed OR (job.last_changed = :last_changed AND job.status IN (:overwrite))
 	;`
-	sql, args, err := sqlx.In(statement, *e.Detail.JobId, *e.Detail.Status, e.Time, *e.Detail.Status, e.Time, e.Time, e.Time, Previous[*e.Detail.Status])
+	input := QueryArg{
+		JobRecord: JobRecord{BatchId: *e.Detail.JobId, Status: *e.Detail.Status, LastChanged: e.Time},
+		Overwrite: PreviousStates[*e.Detail.Status],
+	}
+	query, args, err := sqlx.Named(statement, input)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	sql, args, err := sqlx.In(query, args...)
 	if err != nil {
 		log.Fatalln(err)
 	}
 	sql = db.Rebind(sql)
-
 	_, err = db.Exec(sql, args...)
 	if err != nil {
 		log.Fatalln(err)
