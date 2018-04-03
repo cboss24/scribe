@@ -1,17 +1,15 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/sqs"
-	"log"
 )
 
-var EventQueue = make(chan BatchMessage, 100)
-
-func Poll(queueName string) {
+func Poll(ctx context.Context, queueName string, messages chan<- BatchMessage) {
 	sess := session.Must(session.NewSessionWithOptions(session.Options{
 		Config: aws.Config{
 			Region: aws.String("us-east-1"),
@@ -24,18 +22,21 @@ func Poll(queueName string) {
 		QueueName: aws.String(queueName),
 	})
 	if err != nil {
-		log.Fatalln(err)
+		fmt.Printf("could not get SQS queue url: %s\n", err)
+		close(messages)
+		return
 	}
-	queueUrl := queueUrlOutput.QueueUrl
 	for {
-		receiveMessageOuput, err := svc.ReceiveMessage(&sqs.ReceiveMessageInput{
-			QueueUrl:            queueUrl,
+		receiveMessageOuput, err := svc.ReceiveMessageWithContext(ctx, &sqs.ReceiveMessageInput{
+			QueueUrl:            queueUrlOutput.QueueUrl,
 			MaxNumberOfMessages: aws.Int64(10),
 			WaitTimeSeconds:     aws.Int64(20),
 			VisibilityTimeout:   aws.Int64(60),
 		})
 		if err != nil {
-			log.Fatalln(err)
+			fmt.Printf("could not get messages from SQS queue: %s\n", err)
+			close(messages)
+			return
 		}
 
 		if len(receiveMessageOuput.Messages) == 0 {
@@ -45,13 +46,15 @@ func Poll(queueName string) {
 				event := BatchEvent{}
 				err := json.Unmarshal([]byte(*v.Body), &event)
 				if err != nil {
-					log.Fatalln(err)
+					fmt.Printf("could not unmarshall SQS message: %s\n", err)
+					close(messages)
+					return
 				}
-				EventQueue <- BatchMessage{
+				messages <- BatchMessage{
 					ReceiptHandle: *v.ReceiptHandle,
 					Event:         event,
 				}
-				fmt.Printf("Added event to queue. Queue is now size %d.\n", len(EventQueue))
+				fmt.Printf("Added event to queue. Queue is now size %d.\n", len(messages))
 			}
 		}
 	}

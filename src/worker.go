@@ -6,44 +6,19 @@ import (
 	"github.com/jmoiron/sqlx"
 	"log"
 	"strings"
+	"sync"
 	"time"
 )
 
-type Worker struct {
-	Id          int
-	Input       chan BatchMessage
-	Quit        chan bool
-	WorkerQueue chan chan BatchMessage
-}
-
-func NewWorker(id int, workerQueue chan chan BatchMessage) Worker {
-	return Worker{
-		Id:          id,
-		Input:       make(chan BatchMessage),
-		Quit:        make(chan bool),
-		WorkerQueue: workerQueue,
+func Worker(wg *sync.WaitGroup, messages <-chan BatchMessage) {
+	defer wg.Done()
+	for m := range messages {
+		updateJobRecord(DbConn, m.Event)
+		deleteMessage()
 	}
 }
 
-func (w *Worker) Start() {
-	go func() {
-		for {
-			w.WorkerQueue <- w.Input
-			select {
-			case m := <-w.Input:
-				fmt.Printf("Worker %d Received Input!\n", w.Id)
-				updateJobRecord(DbConn, m.Event)
-				deleteMessage()
-			case <-w.Quit:
-				fmt.Printf("Worker %d Quitting!\n", w.Id)
-				return
-			}
-
-		}
-	}()
-}
-
-var PreviousStates map[string][]string = map[string][]string{
+var PreviousStates = map[string][]string{
 	"SUBMITTED": {},
 	"PENDING":   {"SUBMITTED"},
 	"RUNNABLE":  {"PENDING", "RUNNING"},
@@ -54,17 +29,17 @@ var PreviousStates map[string][]string = map[string][]string{
 }
 
 type JobRecord struct {
-	Attempts      []byte   `db:"attempts"`
-	Container     []byte   `db:"container"`
+	Attempts      []byte    `db:"attempts"`
+	Container     []byte    `db:"container"`
 	CreatedAt     time.Time `db:"created_at"`
-	DependsOn     []byte   `db:"depends_on"`
+	DependsOn     []byte    `db:"depends_on"`
 	JobDefinition *string   `db:"job_definition"`
 	JobId         *string   `db:"job_id"`
 	JobName       *string   `db:"job_name"`
 	JobQueue      *string   `db:"job_queue"`
 	LastChanged   time.Time `db:"last_changed"`
-	Parameters    []byte   `db:"parameters"`
-	RetryStrategy []byte   `db:"retry_strategy"`
+	Parameters    []byte    `db:"parameters"`
+	RetryStrategy []byte    `db:"retry_strategy"`
 	StartedAt     time.Time `db:"started_at"`
 	Status        *string   `db:"status"`
 	StatusReason  *string   `db:"status_reason"`
@@ -169,10 +144,4 @@ func updateJobRecord(db *sqlx.DB, e BatchEvent) {
 
 func deleteMessage() {
 
-}
-
-func (w *Worker) Stop() {
-	go func() {
-		w.Quit <- true
-	}()
 }

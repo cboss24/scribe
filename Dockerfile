@@ -13,4 +13,4 @@ RUN go build -o scribe ./src
 FROM alpine
 RUN apk update && apk upgrade && apk add --no-cache ca-certificates
 COPY --from=build /go/src/github.com/cboss24/scribe/scribe scribe
-ENTRYPOINT ./scribe
+ENTRYPOINT ["./scribe"]
